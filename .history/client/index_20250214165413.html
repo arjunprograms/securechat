@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat & File Sharing Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #messages {
+            height: 400px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 10px;
+            background: white;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 4px;
+            background: #f8f9fa;
+        }
+        .message.own {
+            background: #e3f2fd;
+            margin-left: 20%;
+        }
+        .system { 
+            color: #666;
+            font-style: italic;
+            text-align: center;
+        }
+        .file-message {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #f1f8ff;
+            padding: 10px;
+            border: 1px solid #cce5ff;
+            border-radius: 4px;
+        }
+        .file-icon {
+            font-size: 24px;
+        }
+        input, button {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background: #0084ff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0066cc;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        #messageInput {
+            flex-grow: 1;
+        }
+        #authBox, #chatBox {
+            margin-bottom: 20px;
+        }
+        #chatBox {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="authBox">
+            <h2>Chat Demo</h2>
+            <div id="registerForm">
+                <h3>Register</h3>
+                <input type="text" id="regUsername" placeholder="Username">
+                <input type="password" id="regPassword" placeholder="Password">
+                <button onclick="register()">Register</button>
+            </div>
+
+            <div id="loginForm">
+                <h3>Login</h3>
+                <input type="text" id="username" placeholder="Username">
+                <input type="password" id="password" placeholder="Password">
+                <button onclick="login()">Login</button>
+            </div>
+        </div>
+
+        <div id="chatBox">
+            <h2>Chat Room</h2>
+            <div id="messages"></div>
+            <div class="input-group">
+                <input type="text" id="messageInput" placeholder="Type a message...">
+                <input type="file" id="fileInput" style="display: none" onchange="handleFileSelect(event)">
+                <button onclick="document.getElementById('fileInput').click()">📎</button>
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let currentUser;
+
+        async function register() {
+            const username = document.getElementById('regUsername').value;
+            const password = document.getElementById('regPassword').value;
+
+            try {
+                const response = await fetch('http://localhost:3001/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    alert('Registered successfully! Please login.');
+                } else {
+                    alert(data.error);
+                }
+            } catch (error) {
+                alert('Registration failed');
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('http://localhost:3001/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (response.ok) {
+                    currentUser = username;
+                    document.getElementById('authBox').style.display = 'none';
+                    document.getElementById('chatBox').style.display = 'block';
+                    connectWebSocket(username, password);
+                } else {
+                    const data = await response.json();
+                    alert(data.error);
+                }
+            } catch (error) {
+                alert('Login failed');
+            }
+        }
+
+        function connectWebSocket(username, password) {
+            ws = new WebSocket('ws://localhost:3001');
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({
+                    type: 'auth',
+                    username: username,
+                    password: password
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                displayMessage(data);
+            };
+
+            ws.onclose = () => {
+                alert('Connection lost. Please refresh the page.');
+            };
+        }
+
+        function displayMessage(data) {
+            const messages = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+
+            if (data.username === currentUser) {
+                messageDiv.className += ' own';
+            }
+
+            switch (data.type) {
+                case 'message':
+                    messageDiv.textContent = `${data.username} (${data.time}): ${data.content}`;
+                    break;
+                case 'file':
+                    messageDiv.className += ' file-message';
+                    messageDiv.innerHTML = `
+                        <span class="file-icon">📄</span>
+                        <div>
+                            <div>${data.username} shared a file (${data.time}):</div>
+                            <a href="${data.content}" download="${data.fileName}">${data.fileName}</a>
+                        </div>
+                    `;
+                    break;
+                case 'system':
+                    messageDiv.className += ' system';
+                    messageDiv.textContent = data.message;
+                    break;
+            }
+
+            messages.appendChild(messageDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (message && ws) {
+                ws.send(JSON.stringify({
+                    type: 'message',
+                    content: message
+                }));
+                input.value = '';
+            }
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                ws.send(JSON.stringify({
+                    type: 'file',
+                    content: e.target.result,
+                    fileName: file.name,
+                    fileType: file.type
+                }));
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Handle Enter key in message input
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

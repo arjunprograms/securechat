@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        #loginForm, #registerForm {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #messages {
+            height: 400px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 10px;
+            background: white;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .system { 
+            color: #666;
+            font-style: italic;
+            text-align: center;
+        }
+        .error { 
+            color: #e74c3c;
+            background: #ffd7d7;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        #chatBox {
+            display: none;
+        }
+        input[type="text"], input[type="password"] {
+            padding: 8px;
+            margin-right: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #0084ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0066cc;
+        }
+        #messageInput {
+            width: 80%;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="authBox">
+        <div id="registerForm">
+            <h3>Register</h3>
+            <input type="text" id="regUsername" placeholder="Username">
+            <input type="password" id="regPassword" placeholder="Password">
+            <button onclick="register()">Register</button>
+        </div>
+
+        <div id="loginForm">
+            <h3>Login</h3>
+            <input type="text" id="username" placeholder="Username">
+            <input type="password" id="password" placeholder="Password">
+            <button onclick="login()">Login</button>
+        </div>
+    </div>
+
+    <div id="chatBox">
+        <h2>Chat Room</h2>
+        <div id="messages"></div>
+        <div style="display: flex;">
+            <input type="text" id="messageInput" placeholder="Type a message...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let currentUser;
+
+        async function register() {
+            const username = document.getElementById('regUsername').value;
+            const password = document.getElementById('regPassword').value;
+
+            try {
+                const response = await fetch('http://localhost:3001/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    alert('Registered successfully! Please login.');
+                } else {
+                    alert(data.error);
+                }
+            } catch (error) {
+                alert('Registration failed');
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('http://localhost:3001/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (response.ok) {
+                    currentUser = username;
+                    document.getElementById('authBox').style.display = 'none';
+                    document.getElementById('chatBox').style.display = 'block';
+                    connectWebSocket(username, password);
+                } else {
+                    const data = await response.json();
+                    alert(data.error);
+                }
+            } catch (error) {
+                alert('Login failed');
+            }
+        }
+
+        function connectWebSocket(username, password) {
+            ws = new WebSocket('ws://localhost:3001');
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({
+                    type: 'auth',
+                    username: username,
+                    password: password
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                const messages = document.getElementById('messages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message';
+
+                switch (data.type) {
+                    case 'message':
+                        messageDiv.textContent = `${data.username} (${data.time}): ${data.message}`;
+                        break;
+                    case 'system':
+                        messageDiv.className += ' system';
+                        messageDiv.textContent = data.message;
+                        break;
+                    case 'error':
+                        messageDiv.className += ' error';
+                        messageDiv.textContent = data.message;
+                        break;
+                }
+
+                messages.appendChild(messageDiv);
+                messages.scrollTop = messages.scrollHeight;
+            };
+
+            ws.onclose = () => {
+                alert('Connection lost. Please refresh the page.');
+            };
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (message && ws) {
+                ws.send(JSON.stringify({
+                    type: 'message',
+                    message: message
+                }));
+                input.value = '';
+            }
+        }
+
+        // Handle Enter key in message input
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
